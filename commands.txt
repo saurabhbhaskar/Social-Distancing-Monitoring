@@ -1,0 +1,24 @@
+Social-Distancing-Monitoring> python -m venv venvSocial-Distancing-Monitoring> .\venv\Scripts\Activate
+(venv)Social-Distancing-Monitoring> pip install -r requirements.txt
+
+mkdir yolo_weights
+cd yolo_weights
+Invoke-WebRequest -Uri https://pjreddie.com/media/files/yolov3.weights -OutFile yolov3.weights
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3.cfg -OutFile yolov3.cfg
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/pjreddie/darknet/master/data/coco.names -OutFile coco.names
+
+
+mkdir yolo_weights
+cd yolo_weights
+
+Invoke-WebRequest -Uri https://pjreddie.com/media/files/yolov3.weights -OutFile yolov3.weights
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/pjreddie/darknet/master/cfg/yolov3.cfg -OutFile yolov3.cfg
+Invoke-WebRequest -Uri https://raw.githubusercontent.com/pjreddie/darknet/master/data/coco.names -OutFile coco.names
+
+python main.py --video 'assets/pedestrians.mp4'
+
+
+(venv)Social-Distancing-Monitoring> deactivate
+
+
+

@@ -19,8 +19,7 @@ class YoloPeopleDetector:
             self.__yolocfg, self.__yoloweights)
         self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
         self.net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
-        self.__layer_names = [self.net.getLayerNames()[i[0] - 1]
-                              for i in self.net.getUnconnectedOutLayers()]
+        self.__layer_names = [self.net.getLayerNames()[i - 1] for i in self.net.getUnconnectedOutLayers().flatten()]
         print("yolov3 loaded successfully\n")
 
     def predict(self, image):

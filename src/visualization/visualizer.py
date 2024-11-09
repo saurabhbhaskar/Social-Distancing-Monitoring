@@ -1,8 +1,8 @@
-from utils.utils import find_min_distance
 import cv2
 import numpy as np
-#from math import round
-
+from matplotlib import pyplot as plt
+from io import BytesIO
+from PIL import Image
 
 class Visualizer:
     def __init__(self, critical_line_color=(0, 0, 255), critical_line_thickness=5):
@@ -12,6 +12,14 @@ class Visualizer:
     def draw_pred(self):
         pass
 
+    def plot_to_image(self, fig):
+        """Convert a Matplotlib figure to an image for OpenCV display"""
+        buf = BytesIO()
+        fig.savefig(buf, format="png")
+        buf.seek(0)
+        img = np.array(Image.open(buf))
+        buf.close()
+        return cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
 
 class CameraViz(Visualizer):
     def __init__(self, nmsboxes, frame, classIds, confs, boxes, centers, labelpath='yolo_weights/coco.names',
@@ -42,68 +50,85 @@ class CameraViz(Visualizer):
         self.alldists = []
         self.sev_idx = 0.0
 
-    def draw_pred(self):
-        # TODO : more modularization of draw_pred() functions
+    def draw_dashboard(self, frame, viofeed, nonviofeed, sevidx, violocationsx, violocationsy):
+        """
+        Draw dashboard with graphs on the frame, updating dynamically.
+        """
+        # Dashboard layout
+        dashboard_height = 300
+        total_width = frame.shape[1]
+
+        # Plot: Violations Histogram (Real-time update)
+        fig, ax = plt.subplots(figsize=(4, 2), dpi=50)
+        ax.hist(viofeed, bins=5, color='red', alpha=0.7, label='Violations')
+        ax.set_title("Violations Histogram")
+        ax.set_xlabel("Violation Instances")
+        ax.set_ylabel("Frequency")
+        hist_img = self.plot_to_image(fig)
+        plt.close(fig)
+
+        # Resize hist_img to fit within the dashboard height and frame width
+        hist_img = cv2.resize(hist_img, (frame.shape[1] // 4, dashboard_height))  # Resize width to fit 1/4th of frame width
+
+        # Plot: Non-Violations Histogram (Real-time update)
+        fig, ax = plt.subplots(figsize=(4, 2), dpi=50)
+        ax.hist(nonviofeed, bins=5, color='green', alpha=0.7, label='Non-Violations')
+        ax.set_title("Non-Violations Histogram")
+        ax.set_xlabel("Non-Violation Instances")
+        ax.set_ylabel("Frequency")
+        nonvio_img = self.plot_to_image(fig)
+        plt.close(fig)
+
+        # Resize nonvio_img
+        nonvio_img = cv2.resize(nonvio_img, (frame.shape[1] // 4, dashboard_height))  # Resize width to fit 1/4th of frame width
+
+        # Plot: Severity Index Trend (Real-time update)
+        fig, ax = plt.subplots(figsize=(4, 2), dpi=50)
+        ax.plot(sevidx, color='blue', label='Severity Index')
+        ax.set_title("Severity Index Over Time")
+        ax.set_xlabel("Time Intervals")
+        ax.set_ylabel("Severity Index")
+        sev_img = self.plot_to_image(fig)
+        plt.close(fig)
+
+        # Resize sev_img
+        sev_img = cv2.resize(sev_img, (frame.shape[1] // 4, dashboard_height))  # Resize width to fit 1/4th of frame width
+
+        # Plot: Violations Location Scatter (Real-time update)
+        fig, ax = plt.subplots(figsize=(4, 2), dpi=50)
+        ax.scatter(violocationsx, violocationsy, c='orange', label='Violation Locations')
+        ax.set_title("Violation Locations")
+        ax.set_xlabel("X Coordinates")
+        ax.set_ylabel("Y Coordinates")
+        loc_img = self.plot_to_image(fig)
+        plt.close(fig)
+
+        # Resize loc_img
+        loc_img = cv2.resize(loc_img, (frame.shape[1] // 4, dashboard_height))  # Resize width to fit 1/4th of frame width
+
+        # Ensure the total width is enough for all images
+        if total_width < (hist_img.shape[1] + nonvio_img.shape[1] + sev_img.shape[1] + loc_img.shape[1]):
+            print("Frame width is too small to fit the dashboard layout. Adjusting layout.")
+            return frame  # Skip drawing dashboard if width is insufficient
+
+        # Overlay graphs onto the frame (drawing all 4 images side by side)
+        frame[frame.shape[0] - dashboard_height:frame.shape[0], :hist_img.shape[1]] = hist_img
+        frame[frame.shape[0] - dashboard_height:frame.shape[0], hist_img.shape[1]:hist_img.shape[1] + nonvio_img.shape[1]] = nonvio_img
+        frame[frame.shape[0] - dashboard_height:frame.shape[0], hist_img.shape[1] + nonvio_img.shape[1]:hist_img.shape[1] + nonvio_img.shape[1] + sev_img.shape[1]] = sev_img
+        frame[frame.shape[0] - dashboard_height:frame.shape[0], hist_img.shape[1] + nonvio_img.shape[1] + sev_img.shape[1]:] = loc_img
+
+        return frame
+
+
+    def draw_pred(self, frame, viofeed, nonviofeed, sevidx, violocationsx, violocationsy):
+        # Draw predictions on the frame
         for i in self.__nmsboxes:
-            i = i[0]
             box = self.__boxes[i]
-            left = box[0]
-            top = box[1]
-            width = box[2]
-            height = box[3]
-            cv2.rectangle(self.__frame, (left, top),
-                          (left+width, top+height), self.detected_object_rect_color, self.detected_object_rect_thickness)
-            label = '%.2f' % self.__confs[i]
-            label = '%s:%s' % (self._labels[self.__classIds[i]], label)
-            labelSize, baseLine = cv2.getTextSize(
-                label, self.label_font, self.label_fontscale, self.label_font_thickness)
-            top = max(top, labelSize[1])
-            cv2.rectangle(self.__frame, (left, top - round(1.5*labelSize[1])), (left + round(
-                1.5*labelSize[0]), top + baseLine), self.label_rect_color, cv2.FILLED)
-            cv2.putText(self.__frame, label, (left, top),
-                        self.label_font, self.label_fontscale, self.label_text_color, self.label_font_thickness)
+            left, top, width, height = box[0], box[1], box[2], box[3]
+            cv2.rectangle(frame, (left, top), (left + width, top + height), self.detected_object_rect_color, self.detected_object_rect_thickness)
+            label = f"{self._labels[self.__classIds[i]]}: {self.__confs[i]:.2f}"
+            cv2.putText(frame, label, (left, top - 10), self.label_font, self.label_fontscale, self.label_text_color, self.label_font_thickness)
 
-            self.critical_dists, self.sev_idx, self.alldists = find_min_distance(
-                self.__centers)
-            # TODO : move common attributes between camera and birds eye view to base class
-            for dist in self.critical_dists:
-                cv2.line(self.__frame, dist[0], dist[1],
-                         self.critical_line_color, self.critical_line_thickness)
-            # show severity index
-            self.sev_idx = round(self.sev_idx, 3)*100
-            cv2.putText(self.__frame, "Severity Index : "+str(self.sev_idx)+' %', (50, 50),
-                        self.label_font, self.meter_fontscale, self.meter_text_color, self.meter_font_thickness)
-
-
-class BirdseyeViewTransformer:
-    '''
-    morphs the perspective view into a bird’s-eye (top-down) view
-    note : four_pts needs to be manually calibrated
-    '''
-
-    def __init__(self, frame, four_pts=np.float32(
-            [[230, 730], [950, 950], [1175, 175], [1570, 230]]), scale_w=1.2/2, scale_h=4/2):
-        self.__four_pts = four_pts
-        self.__scale_w = scale_w
-        self.__scale_h = scale_h
-        self.__dst = np.float32(
-            [[0, frame.shape[1]], [frame.shape[0], frame.shape[1]], [0, 0], [frame.shape[0], 0]])
-
-    def map_point_birdsview(self, point):
-        M = cv2.getPerspectiveTransform(self.__dst, self.__four_pts)
-        warped_pt = cv2.perspectiveTransform(point, M)[0][0]
-        warped_pt_scaled = [int(warped_pt[0] * self.__scale_w),
-                            int(warped_pt[1] * self.__scale_h)]
-        return warped_pt_scaled
-
-
-class BirdseyeViewViz(Visualizer):
-    def __init__(self, node_radius=10, color_node=(0, 255, 0), thickness_node=20, cents=None):
-        super().__init__()
-        self.node_radius = node_radius
-        self.color_node = color_node
-        self.thickness_node = thickness_node
-        self.__cents = cents
-
-    def draw_pred(self):
-        pass
+        # Add dashboard
+        frame = self.draw_dashboard(frame, viofeed, nonviofeed, sevidx, violocationsx, violocationsy)
+        return frame
